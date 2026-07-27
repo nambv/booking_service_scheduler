@@ -1,0 +1,11 @@
+# esbuild ships a platform-specific binary and needs its postinstall script to run.
+# Declaring it here keeps `pnpm install` non-interactive for anyone cloning this repo.
+#
+# The three below are optional native speedups pulled in by testcontainers' ssh2
+# transport; they are declined because testcontainers runs fine on the pure-JS
+# fallback and building them needs a compiler toolchain not everyone has.
+allowBuilds:
+  esbuild: true
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

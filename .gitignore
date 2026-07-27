@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.local
+.DS_Store
+
+# Personal Claude Code permission overrides
+.claude/settings.local.json
+
+# Design-phase transcript: provenance, not a deliverable
+design-chat.md
