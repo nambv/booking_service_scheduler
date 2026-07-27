@@ -1,0 +1,979 @@
+openapi: 3.1.0
+info:
+  title: Unified Service Scheduler
+  version: 0.1.0
+  description: >-
+    Books vehicle service appointments at a dealership. A booking is confirmed
+    only when
+
+    both a service bay and a technician qualified for the requested service are
+    free for
+
+    the entire duration of the job.
+
+
+    The non-overlap invariant is enforced by PostgreSQL `EXCLUDE USING gist`
+    constraints,
+
+    not by application code. `GET /availability` is advisory: between checking
+    and booking,
+
+    another caller can take the last pair, which is why a booking can still
+    return 409.
+
+
+    Time ranges are half-open `[start, end)`. An appointment ending at 10:00 and
+    one
+
+    starting at 10:00 do not conflict.
+  license:
+    name: Proprietary — technical assessment submission
+    identifier: LicenseRef-Proprietary
+components:
+  schemas: {}
+paths:
+  /appointments:
+    post:
+      operationId: bookAppointment
+      summary: Book an appointment
+      tags:
+        - Scheduling
+      description: The client supplies a start instant only; the end is derived from
+        the service type's duration, so a caller cannot understate a job to fit
+        a gap. On losing a race for the last free pair the service re-selects a
+        different technician or bay for the same time, up to a bounded number of
+        attempts. It never moves the booking to a different time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                  description: An 8-4-4-4-12 identifier
+                vehicleId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                  description: An 8-4-4-4-12 identifier
+                dealershipId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                  description: An 8-4-4-4-12 identifier
+                serviceTypeId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                  description: An 8-4-4-4-12 identifier
+                startTime:
+                  type: string
+                  format: date-time
+                  pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                  description: ISO 8601 instant with offset
+              required:
+                - customerId
+                - vehicleId
+                - dealershipId
+                - serviceTypeId
+                - startTime
+              description: A booking request. The end time is derived server-side from the
+                service type.
+        description: A booking request. The end time is derived server-side from the
+          service type.
+      responses:
+        "201":
+          description: A confirmed appointment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  customerId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  vehicleId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  dealershipId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  serviceTypeId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  technicianId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: "Chosen by the server: the least-loaded qualified technician, ties
+                      broken at random"
+                  serviceBayId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  startTime:
+                    type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                    description: ISO 8601 instant with offset
+                  endTime:
+                    type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                    description: "Exclusive: ranges are half-open [start, end)"
+                  status:
+                    type: string
+                    enum:
+                      - confirmed
+                      - cancelled
+                required:
+                  - id
+                  - customerId
+                  - vehicleId
+                  - dealershipId
+                  - serviceTypeId
+                  - technicianId
+                  - serviceBayId
+                  - startTime
+                  - endTime
+                  - status
+                additionalProperties: false
+                description: A confirmed appointment
+        "400":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "404":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "409":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "422":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "500":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+  /appointments/{id}:
+    delete:
+      operationId: cancelAppointment
+      summary: Cancel an appointment and free its slot
+      tags:
+        - Scheduling
+      description: "Flipping the status to `cancelled` frees the bay and the
+        technician immediately, because both exclusion constraints are scoped to
+        `WHERE status = 'confirmed'`. No compensating write is needed.
+        Idempotent: cancelling an already-cancelled appointment returns it
+        unchanged. An appointment whose service has already started cannot be
+        cancelled."
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+          in: path
+          name: id
+          required: true
+          description: The appointment to cancel
+      responses:
+        "200":
+          description: A confirmed appointment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  customerId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  vehicleId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  dealershipId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  serviceTypeId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  technicianId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: "Chosen by the server: the least-loaded qualified technician, ties
+                      broken at random"
+                  serviceBayId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+                    description: An 8-4-4-4-12 identifier
+                  startTime:
+                    type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                    description: ISO 8601 instant with offset
+                  endTime:
+                    type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                    description: "Exclusive: ranges are half-open [start, end)"
+                  status:
+                    type: string
+                    enum:
+                      - confirmed
+                      - cancelled
+                required:
+                  - id
+                  - customerId
+                  - vehicleId
+                  - dealershipId
+                  - serviceTypeId
+                  - technicianId
+                  - serviceBayId
+                  - startTime
+                  - endTime
+                  - status
+                additionalProperties: false
+                description: A confirmed appointment
+        "400":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "404":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "422":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "500":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+  /availability:
+    get:
+      operationId: checkAvailability
+      summary: Check whether a booking would succeed
+      tags:
+        - Scheduling
+      description: Advisory only — it does not take the slot. A true result can still
+        be followed by a 409 from POST /appointments if another caller books in
+        between.
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+          in: query
+          name: dealershipId
+          required: true
+          description: An 8-4-4-4-12 identifier
+        - schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+          in: query
+          name: serviceTypeId
+          required: true
+          description: An 8-4-4-4-12 identifier
+        - schema:
+            type: string
+            format: date-time
+            pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+          in: query
+          name: startTime
+          required: true
+          description: ISO 8601 instant with offset
+      responses:
+        "200":
+          description: Advisory only. A true result can still be followed by a 409 if
+            another caller books first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  startTime:
+                    type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                    description: ISO 8601 instant with offset
+                  endTime:
+                    type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                    description: ISO 8601 instant with offset
+                  freeBays:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  freeQualifiedTechnicians:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  reason:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - in_the_past
+                          - before_opening
+                          - after_closing
+                          - spans_multiple_days
+                          - no_bay_available
+                          - no_qualified_technician
+                      - type: "null"
+                    description: Null when available
+                required:
+                  - available
+                  - startTime
+                  - endTime
+                  - freeBays
+                  - freeQualifiedTechnicians
+                  - reason
+                additionalProperties: false
+                description: Advisory only. A true result can still be followed by a 409 if
+                  another caller books first.
+        "400":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "404":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+        "500":
+          description: Error envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - VALIDATION_FAILED
+                          - ENTITY_NOT_FOUND
+                          - OUTSIDE_BUSINESS_HOURS
+                          - BOOKING_IN_THE_PAST
+                          - APPOINTMENT_ALREADY_STARTED
+                          - INVALID_TIME_RANGE
+                          - NO_BAY_AVAILABLE
+                          - NO_QUALIFIED_TECHNICIAN
+                          - SLOT_ALREADY_TAKEN
+                          - BOOKING_CONTENDED
+                          - INTERNAL_ERROR
+                          - BAD_REQUEST
+                        description: Stable machine-readable code
+                      message:
+                        type: string
+                      bindingResource:
+                        description: Which resource was the binding constraint. "Conflict" alone is not
+                          an acceptable 409 body.
+                        type: string
+                        enum:
+                          - service_bay
+                          - technician
+                      details:
+                        type: object
+                        properties: {}
+                        additionalProperties: {}
+                    required:
+                      - code
+                      - message
+                    additionalProperties: false
+                required:
+                  - error
+                additionalProperties: false
+                description: Error envelope
+  /health:
+    get:
+      operationId: health
+      summary: Liveness
+      tags:
+        - Operations
+      responses:
+        "200":
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                required:
+                  - status
+                additionalProperties: false
+  /health/ready:
+    get:
+      operationId: healthReady
+      summary: Readiness — verifies database connectivity
+      tags:
+        - Operations
+      responses:
+        "200":
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ready
+                      - unavailable
+                required:
+                  - status
+                additionalProperties: false
+        "503":
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ready
+                      - unavailable
+                required:
+                  - status
+                additionalProperties: false
+  /metrics:
+    get:
+      operationId: metrics
+      summary: Prometheus metrics
+      tags:
+        - Operations
+      description: Returns `text/plain; version=0.0.4` — the Prometheus text
+        exposition format.
+      responses:
+        "200":
+          description: Default Response
+servers:
+  - url: http://localhost:3000
+    description: Local development
+security: []
+tags:
+  - name: Scheduling
+    description: Booking and availability
+  - name: Operations
+    description: Health and metrics
