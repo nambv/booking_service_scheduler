@@ -12,7 +12,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`CREATE EXTENSION IF NOT EXISTS btree_gist`.execute(db);
 
   await sql`
-    CREATE TABLE dealership (
+    CREATE TABLE dealerships (
       id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name        text NOT NULL,
       timezone    text NOT NULL,
@@ -24,46 +24,46 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db);
 
   await sql`
-    CREATE TABLE service_type (
+    CREATE TABLE service_types (
       id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name              text NOT NULL UNIQUE,
       duration_minutes  integer NOT NULL,
       CONSTRAINT service_type_duration_positive CHECK (duration_minutes > 0),
-      -- Referenced by appointment to make invariant 4 a database guarantee.
+      -- Referenced by appointments to make invariant 4 a database guarantee.
       CONSTRAINT service_type_id_duration_unique UNIQUE (id, duration_minutes)
     )
   `.execute(db);
 
   await sql`
-    CREATE TABLE service_bay (
+    CREATE TABLE service_bays (
       id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      dealership_id  uuid NOT NULL REFERENCES dealership (id) ON DELETE CASCADE,
+      dealership_id  uuid NOT NULL REFERENCES dealerships (id) ON DELETE CASCADE,
       name           text NOT NULL,
       UNIQUE (dealership_id, name),
-      -- Referenced by appointment to make invariant 5 a database guarantee.
+      -- Referenced by appointments to make invariant 5 a database guarantee.
       CONSTRAINT service_bay_id_dealership_unique UNIQUE (id, dealership_id)
     )
   `.execute(db);
 
   await sql`
-    CREATE TABLE technician (
+    CREATE TABLE technicians (
       id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      dealership_id  uuid NOT NULL REFERENCES dealership (id) ON DELETE CASCADE,
+      dealership_id  uuid NOT NULL REFERENCES dealerships (id) ON DELETE CASCADE,
       name           text NOT NULL,
       CONSTRAINT technician_id_dealership_unique UNIQUE (id, dealership_id)
     )
   `.execute(db);
 
   await sql`
-    CREATE TABLE technician_skill (
-      technician_id    uuid NOT NULL REFERENCES technician (id) ON DELETE CASCADE,
-      service_type_id  uuid NOT NULL REFERENCES service_type (id) ON DELETE CASCADE,
+    CREATE TABLE technician_skills (
+      technician_id    uuid NOT NULL REFERENCES technicians (id) ON DELETE CASCADE,
+      service_type_id  uuid NOT NULL REFERENCES service_types (id) ON DELETE CASCADE,
       PRIMARY KEY (technician_id, service_type_id)
     )
   `.execute(db);
 
   await sql`
-    CREATE TABLE customer (
+    CREATE TABLE customers (
       id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name   text NOT NULL,
       email  text NOT NULL UNIQUE,
@@ -72,9 +72,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db);
 
   await sql`
-    CREATE TABLE vehicle (
+    CREATE TABLE vehicles (
       id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      customer_id  uuid NOT NULL REFERENCES customer (id) ON DELETE CASCADE,
+      customer_id  uuid NOT NULL REFERENCES customers (id) ON DELETE CASCADE,
       vin          text NOT NULL UNIQUE,
       make         text NOT NULL,
       model        text NOT NULL
@@ -82,11 +82,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db);
 
   await sql`
-    CREATE TABLE appointment (
+    CREATE TABLE appointments (
       id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      customer_id      uuid NOT NULL REFERENCES customer (id),
-      vehicle_id       uuid NOT NULL REFERENCES vehicle (id),
-      dealership_id    uuid NOT NULL REFERENCES dealership (id),
+      customer_id      uuid NOT NULL REFERENCES customers (id),
+      vehicle_id       uuid NOT NULL REFERENCES vehicles (id),
+      dealership_id    uuid NOT NULL REFERENCES dealerships (id),
       service_type_id  uuid NOT NULL,
       technician_id    uuid NOT NULL,
       service_bay_id   uuid NOT NULL,
@@ -113,21 +113,21 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       -- so a client cannot squeeze a long job into a short gap.
       CONSTRAINT appointment_duration_matches_service_type
         FOREIGN KEY (service_type_id, duration_minutes)
-        REFERENCES service_type (id, duration_minutes),
+        REFERENCES service_types (id, duration_minutes),
 
-      -- Invariant 5: technician and bay must belong to the appointment's dealership.
+      -- Invariant 5: technicians and bay must belong to the appointments's dealerships.
       CONSTRAINT appointment_technician_same_dealership
         FOREIGN KEY (technician_id, dealership_id)
-        REFERENCES technician (id, dealership_id),
+        REFERENCES technicians (id, dealership_id),
 
       CONSTRAINT appointment_bay_same_dealership
         FOREIGN KEY (service_bay_id, dealership_id)
-        REFERENCES service_bay (id, dealership_id),
+        REFERENCES service_bays (id, dealership_id),
 
-      -- Invariant 3: the assigned technician must hold the requested skill.
+      -- Invariant 3: the assigned technicians must hold the requested skill.
       CONSTRAINT appointment_technician_qualified
         FOREIGN KEY (technician_id, service_type_id)
-        REFERENCES technician_skill (technician_id, service_type_id)
+        REFERENCES technician_skills (technician_id, service_type_id)
     )
   `.execute(db);
 
@@ -138,17 +138,17 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // message; this constraint is what makes the rejection true under concurrency.
   //
   // The `status = 'confirmed'` predicate is here from the first migration even
-  // though cancellation is out of scope, so that a cancelled appointment stops
+  // though cancellation is out of scope, so that a cancelled appointments stops
   // blocking its slot without a constraint rebuild on a populated table.
   await sql`
-    ALTER TABLE appointment
+    ALTER TABLE appointments
       ADD CONSTRAINT no_bay_overlap
       EXCLUDE USING gist (service_bay_id WITH =, time_range WITH &&)
       WHERE (status = 'confirmed')
   `.execute(db);
 
   await sql`
-    ALTER TABLE appointment
+    ALTER TABLE appointments
       ADD CONSTRAINT no_technician_overlap
       EXCLUDE USING gist (technician_id WITH =, time_range WITH &&)
       WHERE (status = 'confirmed')
@@ -156,17 +156,17 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
   // The exclusion constraints create gist indexes on (resource, time_range),
   // which already serve the availability queries. These two cover the remaining
-  // access paths: listing a dealership's day, and resolving a customer's history.
+  // access paths: listing a dealerships's day, and resolving a customers's history.
   await sql`
     CREATE INDEX appointment_dealership_time_idx
-      ON appointment USING gist (dealership_id, time_range)
+      ON appointments USING gist (dealership_id, time_range)
       WHERE status = 'confirmed'
   `.execute(db);
 
-  await sql`CREATE INDEX appointment_customer_idx ON appointment (customer_id)`.execute(db);
+  await sql`CREATE INDEX appointment_customer_idx ON appointments (customer_id)`.execute(db);
 
   await sql`
     CREATE INDEX technician_skill_service_type_idx
-      ON technician_skill (service_type_id, technician_id)
+      ON technician_skills (service_type_id, technician_id)
   `.execute(db);
 }

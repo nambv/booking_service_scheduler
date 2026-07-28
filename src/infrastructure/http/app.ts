@@ -117,11 +117,19 @@ export function createApp(options: AppOptions): FastifyInstance {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
       request.log.info({ outcome: 'rejected', reason: 'validation' }, 'request failed validation');
+      // Reshape to a minimal, stable {field, message} rather than passing Zod's
+      // raw issue objects through: those leak internal schema paths and the
+      // validation regex, and would be inconsistent with the curated details of
+      // domain errors. instancePath is `/vehicleId`; strip the leading slash.
+      const issues = error.validation.map((issue) => ({
+        field: issue.instancePath.replace(/^\//, '') || '(body)',
+        message: issue.message,
+      }));
       return reply.code(400).send({
         error: {
           code: 'VALIDATION_FAILED',
           message: 'Request failed schema validation',
-          details: { issues: error.validation },
+          details: { issues },
         },
       });
     }

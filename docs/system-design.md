@@ -101,57 +101,57 @@ section 5: it is not a passive store here, it is an active participant in correc
 
 ```mermaid
 erDiagram
-    DEALERSHIP ||--o{ SERVICE_BAY : has
-    DEALERSHIP ||--o{ TECHNICIAN : employs
-    DEALERSHIP ||--o{ APPOINTMENT : hosts
-    TECHNICIAN ||--o{ TECHNICIAN_SKILL : holds
-    SERVICE_TYPE ||--o{ TECHNICIAN_SKILL : qualifies
-    CUSTOMER ||--o{ VEHICLE : owns
-    VEHICLE ||--o{ APPOINTMENT : "is serviced in"
-    SERVICE_TYPE ||--o{ APPOINTMENT : defines
-    TECHNICIAN ||--o{ APPOINTMENT : "assigned to"
-    SERVICE_BAY ||--o{ APPOINTMENT : "assigned to"
+    DEALERSHIPS ||--o{ SERVICE_BAYS : has
+    DEALERSHIPS ||--o{ TECHNICIANS : employs
+    DEALERSHIPS ||--o{ APPOINTMENTS : hosts
+    TECHNICIANS ||--o{ TECHNICIAN_SKILLS : holds
+    SERVICE_TYPES ||--o{ TECHNICIAN_SKILLS : qualifies
+    CUSTOMERS ||--o{ VEHICLES : owns
+    VEHICLES ||--o{ APPOINTMENTS : "is serviced in"
+    SERVICE_TYPES ||--o{ APPOINTMENTS : defines
+    TECHNICIANS ||--o{ APPOINTMENTS : "assigned to"
+    SERVICE_BAYS ||--o{ APPOINTMENTS : "assigned to"
 
-    DEALERSHIP {
+    DEALERSHIPS {
         uuid id PK
         text name
         text timezone
         time opens_at
         time closes_at
     }
-    SERVICE_BAY {
+    SERVICE_BAYS {
         uuid id PK
         uuid dealership_id FK
         text name
     }
-    TECHNICIAN {
+    TECHNICIANS {
         uuid id PK
         uuid dealership_id FK
         text name
     }
-    SERVICE_TYPE {
+    SERVICE_TYPES {
         uuid id PK
         text name
         int duration_minutes
     }
-    CUSTOMER {
+    CUSTOMERS {
         uuid id PK
         text name
         text email
         text phone
     }
-    VEHICLE {
+    VEHICLES {
         uuid id PK
         uuid customer_id FK
         text vin
         text make
         text model
     }
-    TECHNICIAN_SKILL {
+    TECHNICIAN_SKILLS {
         uuid technician_id FK
         uuid service_type_id FK
     }
-    APPOINTMENT {
+    APPOINTMENTS {
         uuid id PK
         uuid customer_id FK
         uuid vehicle_id FK
@@ -222,12 +222,12 @@ There is nothing to lock.
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
-ALTER TABLE appointment
+ALTER TABLE appointments
   ADD CONSTRAINT no_bay_overlap
   EXCLUDE USING gist (service_bay_id WITH =, time_range WITH &&)
   WHERE (status = 'confirmed');
 
-ALTER TABLE appointment
+ALTER TABLE appointments
   ADD CONSTRAINT no_technician_overlap
   EXCLUDE USING gist (technician_id WITH =, time_range WITH &&)
   WHERE (status = 'confirmed');

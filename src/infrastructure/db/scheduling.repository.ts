@@ -68,7 +68,7 @@ export function createSchedulingRepository(
   return {
     async findDealership(id: DealershipId): Promise<Dealership | undefined> {
       const row = await db
-        .selectFrom('dealership')
+        .selectFrom('dealerships')
         .select(['id', 'name', 'timezone', 'opens_at', 'closes_at'])
         .where('id', '=', id)
         .executeTakeFirst();
@@ -85,7 +85,7 @@ export function createSchedulingRepository(
 
     async findServiceType(id: ServiceTypeId): Promise<ServiceType | undefined> {
       const row = await db
-        .selectFrom('service_type')
+        .selectFrom('service_types')
         .select(['id', 'name', 'duration_minutes'])
         .where('id', '=', id)
         .executeTakeFirst();
@@ -96,7 +96,7 @@ export function createSchedulingRepository(
 
     async findCustomer(id: CustomerId): Promise<Customer | undefined> {
       const row = await db
-        .selectFrom('customer')
+        .selectFrom('customers')
         .select(['id', 'name', 'email', 'phone'])
         .where('id', '=', id)
         .executeTakeFirst();
@@ -107,7 +107,7 @@ export function createSchedulingRepository(
 
     async findVehicle(id: VehicleId): Promise<Vehicle | undefined> {
       const row = await db
-        .selectFrom('vehicle')
+        .selectFrom('vehicles')
         .select(['id', 'customer_id', 'vin', 'make', 'model'])
         .where('id', '=', id)
         .executeTakeFirst();
@@ -127,7 +127,7 @@ export function createSchedulingRepository(
         SELECT id, customer_id, vehicle_id, dealership_id, service_type_id,
                technician_id, service_bay_id,
                lower(time_range) AS starts_at, upper(time_range) AS ends_at, status
-        FROM appointment
+        FROM appointments
         WHERE id = ${id}
       `.execute(db);
       const row = rows[0];
@@ -139,7 +139,7 @@ export function createSchedulingRepository(
       // two simultaneous cancellations gets a row back. No lock is needed: the
       // row-level write lock Postgres already takes is the serialisation point.
       const { rows } = await sql<AppointmentRow>`
-        UPDATE appointment
+        UPDATE appointments
            SET status = 'cancelled'
          WHERE id = ${id}
            AND status = 'confirmed'
@@ -190,8 +190,8 @@ function createUnitOfWork(
         const { rows } = await sql<{ id: string; appointments_on_date: number }>`
         SELECT b.id,
                count(a.id)::int AS appointments_on_date
-        FROM service_bay b
-        LEFT JOIN appointment a
+        FROM service_bays b
+        LEFT JOIN appointments a
                ON a.service_bay_id = b.id
               AND a.status = 'confirmed'
               AND (lower(a.time_range) AT TIME ZONE ${dealership.timeZone})::date
@@ -199,7 +199,7 @@ function createUnitOfWork(
         WHERE b.dealership_id = ${dealership.id}
           AND NOT EXISTS (
             SELECT 1
-            FROM appointment busy
+            FROM appointments busy
             WHERE busy.service_bay_id = b.id
               AND busy.status = 'confirmed'
               AND busy.time_range && tstzrange(${range.start}, ${range.end}, '[)')
@@ -227,13 +227,13 @@ function createUnitOfWork(
           const { rows } = await sql<{ id: string; appointments_on_date: number }>`
         SELECT t.id,
                count(a.id)::int AS appointments_on_date
-        FROM technician t
+        FROM technicians t
         -- Qualification is an inner join, so an unskilled technician can never
         -- appear as a candidate no matter how free their calendar is.
-        JOIN technician_skill ts
+        JOIN technician_skills ts
           ON ts.technician_id = t.id
          AND ts.service_type_id = ${serviceType}
-        LEFT JOIN appointment a
+        LEFT JOIN appointments a
                ON a.technician_id = t.id
               AND a.status = 'confirmed'
               AND (lower(a.time_range) AT TIME ZONE ${dealership.timeZone})::date
@@ -241,7 +241,7 @@ function createUnitOfWork(
         WHERE t.dealership_id = ${dealership.id}
           AND NOT EXISTS (
             SELECT 1
-            FROM appointment busy
+            FROM appointments busy
             WHERE busy.technician_id = t.id
               AND busy.status = 'confirmed'
               AND busy.time_range && tstzrange(${range.start}, ${range.end}, '[)')
@@ -262,7 +262,7 @@ function createUnitOfWork(
       return withSpan('appointment.insert', async () => {
         try {
         const { rows } = await sql<AppointmentRow>`
-          INSERT INTO appointment
+          INSERT INTO appointments
             (customer_id, vehicle_id, dealership_id, service_type_id,
              technician_id, service_bay_id, time_range, status)
           VALUES

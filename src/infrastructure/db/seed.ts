@@ -273,26 +273,26 @@ export async function seed(db: Kysely<Database>): Promise<void> {
   await db.transaction().execute(async (trx) => {
     // Truncate rather than delete so re-seeding is a single statement and the
     // cascade order is the database's problem, not the script's.
-    await trx.deleteFrom('appointment').execute();
-    await trx.deleteFrom('technician_skill').execute();
-    await trx.deleteFrom('technician').execute();
-    await trx.deleteFrom('service_bay').execute();
-    await trx.deleteFrom('vehicle').execute();
-    await trx.deleteFrom('customer').execute();
-    await trx.deleteFrom('service_type').execute();
-    await trx.deleteFrom('dealership').execute();
+    await trx.deleteFrom('appointments').execute();
+    await trx.deleteFrom('technician_skills').execute();
+    await trx.deleteFrom('technicians').execute();
+    await trx.deleteFrom('service_bays').execute();
+    await trx.deleteFrom('vehicles').execute();
+    await trx.deleteFrom('customers').execute();
+    await trx.deleteFrom('service_types').execute();
+    await trx.deleteFrom('dealerships').execute();
 
-    await trx.insertInto('service_type').values(serviceTypeRows).execute();
-    await trx.insertInto('dealership').values(dealershipRows).execute();
-    await trx.insertInto('service_bay').values(bayRows).execute();
+    await trx.insertInto('service_types').values(serviceTypeRows).execute();
+    await trx.insertInto('dealerships').values(dealershipRows).execute();
+    await trx.insertInto('service_bays').values(bayRows).execute();
     await trx
-      .insertInto('technician')
+      .insertInto('technicians')
       .values(
         technicianSeeds.map(({ id, dealership_id, name }) => ({ id, dealership_id, name })),
       )
       .execute();
     await trx
-      .insertInto('technician_skill')
+      .insertInto('technician_skills')
       .values(
         technicianSeeds.flatMap((technician) =>
           technician.skills.map((service_type_id) => ({
@@ -302,7 +302,7 @@ export async function seed(db: Kysely<Database>): Promise<void> {
         ),
       )
       .execute();
-    await trx.insertInto('customer').values(customerRows).execute();
-    await trx.insertInto('vehicle').values(vehicleRows).execute();
+    await trx.insertInto('customers').values(customerRows).execute();
+    await trx.insertInto('vehicles').values(vehicleRows).execute();
   });
 }

@@ -7,14 +7,14 @@ import type { Generated } from 'kysely';
  * both vocabularies.
  */
 export interface Database {
-  dealership: DealershipTable;
-  service_type: ServiceTypeTable;
-  service_bay: ServiceBayTable;
-  technician: TechnicianTable;
-  technician_skill: TechnicianSkillTable;
-  customer: CustomerTable;
-  vehicle: VehicleTable;
-  appointment: AppointmentTable;
+  dealerships: DealershipTable;
+  service_types: ServiceTypeTable;
+  service_bays: ServiceBayTable;
+  technicians: TechnicianTable;
+  technician_skills: TechnicianSkillTable;
+  customers: CustomerTable;
+  vehicles: VehicleTable;
+  appointments: AppointmentTable;
 }
 
 export interface DealershipTable {

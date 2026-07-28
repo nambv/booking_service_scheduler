@@ -36,7 +36,7 @@ afterEach(async () => {
 
 async function appointmentCount(): Promise<number> {
   const rows = await harness.db
-    .selectFrom('appointment')
+    .selectFrom('appointments')
     .where('status', '=', 'confirmed')
     .select(({ fn }) => fn.countAll<number>().as('count'))
     .execute();
@@ -100,7 +100,7 @@ describe('parallel booking into a single-pair slot', () => {
     await fire(20, gearboxAtLondon);
 
     const rows = await harness.db
-      .selectFrom('appointment')
+      .selectFrom('appointments')
       .select('technician_id')
       .where('status', '=', 'confirmed')
       .execute();
@@ -134,7 +134,7 @@ describe('parallel booking into a multi-capacity slot', () => {
     await fire(20, oilAtLondon);
 
     const rows = await harness.db
-      .selectFrom('appointment')
+      .selectFrom('appointments')
       .select('technician_id')
       .where('status', '=', 'confirmed')
       .execute();

@@ -22,12 +22,12 @@ So the non-overlap invariant is **not** enforced by application code. It is decl
 schema:
 
 ```sql
-ALTER TABLE appointment
+ALTER TABLE appointments
   ADD CONSTRAINT no_bay_overlap
   EXCLUDE USING gist (service_bay_id WITH =, time_range WITH &&)
   WHERE (status = 'confirmed');
 
-ALTER TABLE appointment
+ALTER TABLE appointments
   ADD CONSTRAINT no_technician_overlap
   EXCLUDE USING gist (technician_id WITH =, time_range WITH &&)
   WHERE (status = 'confirmed');
@@ -45,7 +45,7 @@ Ten parallel requests for a slot with capacity for one, against a running server
 ```
    1 201
    9 409
-rows in appointment: 1
+rows in appointments: 1
 ```
 
 Full reasoning, the options that were rejected, and what building it revealed:
@@ -391,9 +391,9 @@ they hold against a manual `INSERT` too. No triggers, no stored procedures.
 | --- | --- |
 | No two appointments overlap in one bay | `EXCLUDE USING gist` |
 | No two appointments overlap for one technician | `EXCLUDE USING gist` |
-| The technician holds the required skill | `FK (technician_id, service_type_id) → technician_skill` |
+| The technician holds the required skill | `FK (technician_id, service_type_id) → technician_skills` |
 | `end = start + service_type.duration` | generated column + `FK (service_type_id, duration_minutes)` |
-| Technician and bay belong to the appointment's dealership | `FK (…, dealership_id) → technician` / `service_bay` |
+| Technician and bay belong to the appointment's dealership | `FK (…, dealership_id) → technicians` / `service_bays` |
 
 ---
 

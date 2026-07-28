@@ -13,8 +13,23 @@ import { z } from 'zod';
 // `uuid()` additionally enforces the RFC version nibble, which would reject
 // perfectly valid keys that were not minted as RFC-4122 v1-8.
 
-const Guid = z.guid().describe('An 8-4-4-4-12 identifier');
-const Instant = z.iso.datetime({ offset: true }).describe('ISO 8601 instant with offset');
+// Human-readable messages rather than Zod's defaults. A missing field reads as
+// "Required"; a present-but-wrong value says what shape it should be. The field
+// name is carried separately in the error response, so the message never repeats it.
+const Guid = z
+  .guid({ error: (issue) => (issue.input === undefined ? 'Required' : 'Must be a valid UUID') })
+  .describe('An 8-4-4-4-12 identifier');
+
+const Instant = z
+  .iso
+  .datetime({
+    offset: true,
+    error: (issue) =>
+      issue.input === undefined
+        ? 'Required'
+        : 'Must be an ISO 8601 date-time with an offset (e.g. 2026-08-03T09:00:00Z)',
+  })
+  .describe('ISO 8601 instant with offset');
 
 export const BookAppointmentBody = z
   .object({

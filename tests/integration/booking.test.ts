@@ -90,7 +90,7 @@ describe('POST /appointments — success', () => {
   it('persists exactly one row for one successful booking', async () => {
     await post(app, validBody);
     const rows = await harness.db
-      .selectFrom('appointment')
+      .selectFrom('appointments')
       .select(({ fn }) => fn.countAll<number>().as('count'))
       .execute();
     expect(rows[0]?.count).toBe(1);
@@ -112,6 +112,27 @@ describe('POST /appointments — validation (400)', () => {
   it('rejects a non-uuid id', async () => {
     const response = await post(app, { ...validBody, dealershipId: 'not-a-uuid' });
     expect(response.statusCode).toBe(400);
+  });
+
+  // Validation details are reshaped to a clean {field, message} with a friendly
+  // message, rather than passing Zod's raw issues through (which leak internal
+  // schema paths and the validation regex). The exact toEqual proves both the
+  // clean shape — no extra keys — and the human-readable message.
+  it('reports a bad value as {field, "Must be a valid UUID"}, no internals leaked', async () => {
+    const response = await post(app, { ...validBody, dealershipId: 'not-a-uuid' });
+    const issues = response.json<{ error: { details: { issues: unknown[] } } }>().error.details
+      .issues;
+
+    expect(issues).toEqual([{ field: 'dealershipId', message: 'Must be a valid UUID' }]);
+  });
+
+  it('reports a missing field as {field, "Required"}', async () => {
+    const response = await post(app, { customerId: CUSTOMERS.harper });
+    const issues = response.json<{
+      error: { details: { issues: { field: string; message: string }[] } };
+    }>().error.details.issues;
+
+    expect(issues).toContainEqual({ field: 'vehicleId', message: 'Required' });
   });
 });
 
@@ -221,7 +242,7 @@ describe('DELETE /appointments/:id — cancellation frees the slot', () => {
     await cancel(appointmentOf(booked).id);
 
     const rows = await harness.db
-      .selectFrom('appointment')
+      .selectFrom('appointments')
       .select(['id', 'status'])
       .execute();
 
@@ -281,7 +302,7 @@ describe('GET /availability', () => {
 
     // Advisory only: it must not have created anything.
     const rows = await harness.db
-      .selectFrom('appointment')
+      .selectFrom('appointments')
       .select(({ fn }) => fn.countAll<number>().as('count'))
       .execute();
     expect(rows[0]?.count).toBe(0);
