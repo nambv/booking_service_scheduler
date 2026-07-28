@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { z } from 'zod';
 
 const EnvSchema = z.object({
@@ -11,7 +12,27 @@ const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
+let dotEnvLoaded = false;
+
+/**
+ * Populate `process.env` from a local `.env` file when one is present. Real
+ * environment variables always win (Node does not overwrite existing keys), so
+ * this only fills gaps for local development and a clean `git clone`. It is a
+ * no-op in tests, which pass an explicit `source`, and in production, which ships
+ * no `.env`. Requires Node >=22 for `process.loadEnvFile`.
+ */
+function loadDotEnvOnce(): void {
+  if (dotEnvLoaded) return;
+  dotEnvLoaded = true;
+  if (existsSync('.env')) {
+    process.loadEnvFile();
+  }
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
+  if (source === process.env) {
+    loadDotEnvOnce();
+  }
   const result = EnvSchema.safeParse(source);
   if (!result.success) {
     // Configuration problems are the cheapest class of failure to catch, and the

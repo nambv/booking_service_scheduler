@@ -60,16 +60,18 @@ integration suite).
 
 ```bash
 pnpm install
-pnpm db:up        # Postgres 16 on localhost:55432
+cp .env.example .env   # defaults already match the compose file
+pnpm db:up             # Postgres 16 on localhost:55432
 pnpm db:migrate
 pnpm db:seed
-pnpm start        # http://localhost:3000
+pnpm start             # http://localhost:3000
 ```
 
 `pnpm db:reset` does the whole cycle from a clean volume.
 
-> The compose file binds **55432**, not 5432 — developers commonly already have a Postgres on
-> the default port. Set `DATABASE_URL` to match:
+> A local `.env` is loaded automatically at startup; real environment variables always take
+> precedence over it. The compose file binds **55432**, not 5432 — developers commonly already
+> have a Postgres on the default port — and `.env.example` already points `DATABASE_URL` there:
 > `postgresql://scheduler:scheduler@localhost:55432/scheduler`
 
 | Script | Does |
